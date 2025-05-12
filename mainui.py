@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import sqlite3
 import pandas as pd
 import os
+import streamlit as st
 
 # --- Scoring Function ---
 def score_track(row, vibe):
@@ -38,7 +39,6 @@ def score_track(row, vibe):
         elif 85 <= bpm < 95 or 119 <= bpm <= 130:
             score += 1
 
-    # Add slight randomness to break ties in score
     score += random.uniform(0, 0.3)
     return score
 
@@ -87,7 +87,7 @@ def build_harmonic_graph_setlist(scored_tracks, total_duration_seconds, use_auto
     df = [t for t in scored_tracks if t['vibe_score'] > 0 and t['key']]
 
     if use_auto_segmentation:
-        build_time = 1800  # 30 minutes for build-up
+        build_time = 1800
         remaining_time = total_duration_seconds - build_time
         main_time = remaining_time * 0.6
         peak_time = remaining_time * 0.4
@@ -137,7 +137,7 @@ def build_segment_graph(tracks, total_duration_seconds, transitions=None):
                         graph[i].append(j)
                         continue
                 graph[i].append(j)
-        random.shuffle(graph[i])  # Randomize neighbors
+        random.shuffle(graph[i])
 
     dp = [(durations[i], [i]) for i in range(n)]
     for i in range(n):
@@ -161,44 +161,35 @@ def estimate_track_duration(row, ratio=0.7):
         total = 210
     return int(total * ratio)
 
-def print_timestamped_setlist(start_time, setlist):
-    current = start_time
-    for track in setlist:
-        print(f"{current.strftime('%H:%M')} | {track['track_title']} — {track['artist']} | {track['bpm']} BPM | Key {track['key']}")
-        duration = estimate_track_duration(track)
-        current += timedelta(seconds=duration)
+# --- Streamlit UI ---
+st.title("🎶 Smart DJ Setlist Generator")
 
-# --- Main Function ---
-def main():
-    conn = sqlite3.connect("dj_tracks.db")
-    df = pd.read_sql_query("SELECT * FROM tracks", conn)
+start_str = st.time_input("Set Start Time", value=datetime.strptime("01:00", "%H:%M"))
+end_str = st.time_input("Set End Time", value=datetime.strptime("03:00", "%H:%M"))
+vibe = st.selectbox("Select Vibe", ["Frat Party", "Sunset"])
+segment_auto = st.checkbox("Auto Segment by Energy Curve", value=True)
 
-    start_str = input("Enter set start time (HH:MM): ")
-    end_str = input("Enter set end time (HH:MM): ")
-    vibe = input("Enter vibe (e.g. Frat Party, Sunset): ").strip()
-    segmentation_mode = input("Segment manually? (y/n): ").strip().lower()
-    use_auto = segmentation_mode != 'y'
-
-    start_time = datetime.strptime(start_str, "%H:%M")
-    end_time = datetime.strptime(end_str, "%H:%M")
+if st.button("Generate Setlist"):
+    start_time = datetime.combine(datetime.today(), start_str.time())
+    end_time = datetime.combine(datetime.today(), end_str.time())
     if end_time <= start_time:
         end_time += timedelta(days=1)
 
-    total_duration = (end_time - start_time).total_seconds()
+    conn = sqlite3.connect("dj_tracks.db")
+    df = pd.read_sql_query("SELECT * FROM tracks", conn)
     df['vibe_score'] = df.apply(lambda row: score_track(row, vibe), axis=1)
 
+    total_duration = (end_time - start_time).total_seconds()
     transitions = load_transitions()
     best_set = build_harmonic_graph_setlist(
         df.to_dict('records'),
         total_duration_seconds=total_duration,
-        use_auto_segmentation=use_auto,
+        use_auto_segmentation=segment_auto,
         transitions=transitions
     )
 
-    print(f"\n🕒 Set duration: {end_time - start_time}")
-    print(f"🎧 Vibe selected: {vibe}\n")
-    print("🎶 Generated Setlist:\n" + "-" * 50)
-    print_timestamped_setlist(start_time, best_set)
+    st.markdown(f"### 🎧 Vibe: {vibe} | 🕒 Duration: {end_time - start_time}")
 
-if __name__ == "__main__":
-    main()
+    for track in best_set:
+        st.write(f"{start_time.strftime('%H:%M')} | {track['track_title']} — {track['artist']} | {track['bpm']} BPM | Key {track['key']}")
+        start_time += timedelta(seconds=estimate_track_duration(track))
