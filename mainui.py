@@ -7,6 +7,7 @@ import pandas as pd
 import os
 import streamlit as st
 
+
 def score_track(row, vibe):
     bpm = row['bpm']
     genre = str(row['genre']).strip().lower()
@@ -187,6 +188,7 @@ def estimate_track_duration(row, ratio=0.7):
     return int(total * ratio)
 
 def summarize_stats(setlist):
+    print(setlist[0])
     if not setlist:
         return
     avg_bpm = sum(t['bpm'] for t in setlist) / len(setlist)
@@ -201,7 +203,7 @@ def summarize_stats(setlist):
 def export_setlist_to_csv(setlist, filename="setlist_export.csv"):
     df = pd.DataFrame(setlist)
     df.to_csv(filename, index=False)
-    st.download_button("📥 Download Setlist", data=df.to_csv(index=False), file_name=filename, mime='text/csv')
+    st.download_button("Download Setlist", data=df.to_csv(index=False), file_name=filename, mime='text/csv')
 
 
 def save_setlist_to_db(name, setlist):
@@ -237,6 +239,7 @@ conn = sqlite3.connect("dj_tracks.db")
 df = pd.read_sql_query("SELECT * FROM tracks", conn)
 existing_titles = df['track_title'].dropna().unique().tolist()
 
+
 if st.button("Generate Setlist"):
     start_time = datetime.combine(datetime.today(), start_str)
     end_time = datetime.combine(datetime.today(), end_str)
@@ -250,7 +253,7 @@ if st.button("Generate Setlist"):
 
     st.session_state.edited_set = best_set
 
-st.markdown("###  Final Edited Setlist")
+st.markdown("### Outputted Setlist")
 if 'edited_set' in st.session_state:
     current_time = datetime.combine(datetime.today(), start_str)
     for i, track in enumerate(st.session_state.edited_set):
@@ -278,38 +281,50 @@ new_bpm = st.number_input("BPM", min_value=60.0, max_value=180.0, value=float(ma
 new_key = st.text_input("Camelot Key (e.g. 6A, 5B)", value=matched_row['key'] if matched_row is not None else "")
 new_genre = st.text_input("Genre", value=matched_row['genre'] if matched_row is not None else "")
 
-if new_title and new_title not in existing_titles:
-    st.warning("⚠️ This title is not in our records.")
-
 if st.button("Add Song to Setlist"):
     if 'edited_set' not in st.session_state:
         st.session_state.edited_set = []
 
-    new_track = {
-        "track_title": new_title,
-        "artist": new_artist,
-        "bpm": new_bpm,
-        "key": new_key,
-        "genre": new_genre,
-        "vibe_score": 2
-    }
+    if any(
+        song['track_title'].lower() == new_title.lower() and 
+        song['artist'].lower() == new_artist.lower()
+        for song in st.session_state.edited_set
+    ):
+        st.warning(f"⚠️ '{new_title}' by {new_artist} is already in the setlist.")
+    else:
+        new_track = {
+            "track_title": new_title,
+            "artist": new_artist,
+            "bpm": new_bpm,
+            "key": new_key,
+            "genre": new_genre,
+            "vibe_score": 2
+        }
 
-    # Try to insert after best harmonic fit
-    inserted = False
-    for i in range(len(st.session_state.edited_set)):
-        curr_key = st.session_state.edited_set[i]['key'].strip().upper()
-        if new_key.strip().upper() in get_harmonic_neighbors(curr_key):
-            st.session_state.edited_set.insert(i + 1, new_track)
-            inserted = True
-            break
+        inserted = False
+        for i in range(len(st.session_state.edited_set)):
+            curr_key = st.session_state.edited_set[i]['key'].strip().upper()
+            if new_key.strip().upper() in get_harmonic_neighbors(curr_key):
+                st.session_state.edited_set.insert(i + 1, new_track)
+                inserted = True
+                break
 
-    if not inserted:
-        st.session_state.edited_set.append(new_track)
+        if not inserted:
+            st.session_state.edited_set.append(new_track)
 
-    st.success(f" '{new_title}' added to setlist!")
-    st.rerun()
+        st.success(f"✅ '{new_title}' added to setlist!")
+        st.rerun()
+
 
 st.markdown("---")
+if st.button("Save Setlist", key="save_setlist_button"):
+    save_setlist_to_db(name_to_save, st.session_state.edited_set)
+
+st.markdown("---")
+if st.session_state.edited_set:
+    if st.button("Export Setlist as CSV", key="export_setlist_button"):
+        export_setlist_to_csv(st.session_state.edited_set)
+
 st.markdown("### Load Saved Setlist")
 saved_df = load_saved_setlists()
 if not saved_df.empty:
