@@ -2,11 +2,12 @@ import os
 import sqlite3
 import pandas as pd
 
-db_path = "dj_tracks.db"
+# Correct path to DB in parent folder
+db_path = os.path.join("..", "dj_tracks.db")
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 
-#if the table doesn't exist it gets created
+# Create table if it doesn't exist
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS tracks (
         track_title TEXT,
@@ -19,7 +20,7 @@ cursor.execute('''
 ''')
 conn.commit()
 
-
+# Try reading TXT with different encodings
 def read_file_with_encoding_fallback(filepath):
     encodings = ['utf-8', 'utf-16', 'ISO-8859-1', 'windows-1252']
     for enc in encodings:
@@ -29,7 +30,7 @@ def read_file_with_encoding_fallback(filepath):
             continue
     raise ValueError(f"Failed to read file with any known encoding: {filepath}")
 
-#if null it finds the most frequent genre for a given artist in the DB
+# Infer genre from artist history
 def get_artist_most_common_genre(artist):
     cursor.execute('''
         SELECT genre FROM tracks
@@ -38,9 +39,10 @@ def get_artist_most_common_genre(artist):
     genres = [row[0] for row in cursor.fetchall()]
     if not genres:
         return None
-    return pd.Series(genres).mode()[0]  # most frequent genre
+    return pd.Series(genres).mode()[0]
 
-def load_txt_files(folder="data"):
+# Load all .txt files in current folder
+def load_txt_files(folder="."):
     for filename in os.listdir(folder):
         if filename.endswith(".txt"):
             filepath = os.path.join(folder, filename)
@@ -52,16 +54,24 @@ def load_txt_files(folder="data"):
                     if pd.isna(genre) or str(genre).strip() == "":
                         inferred_genre = get_artist_most_common_genre(row['Artist'])
                         genre = inferred_genre if inferred_genre else None
+
                     try:
                         cursor.execute('''
-                            INSERT OR IGNORE INTO tracks (track_title, artist, bpm, key, genre)
+                            INSERT OR REPLACE INTO tracks (track_title, artist, bpm, key, genre)
                             VALUES (?, ?, ?, ?, ?)
-                        ''', (row['Track Title'], row['Artist'], row['BPM'], row['Key'], genre))
+                        ''', (
+                            row['Track Title'], 
+                            row['Artist'], 
+                            row['BPM'], 
+                            row['Key'], 
+                            genre
+                        ))
                     except Exception as e:
                         print(f"Insert error in {filename}, row {row}: {e}")
             except Exception as e:
                 print(f"Failed to read {filename}: {e}")
     conn.commit()
 
-load_txt_files("data")
+# Run the loader
+load_txt_files(".")
 conn.close()

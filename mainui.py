@@ -7,12 +7,12 @@ import pandas as pd
 import os
 import streamlit as st
 
-# --- Scoring Function ---
 def score_track(row, vibe):
     bpm = row['bpm']
     genre = str(row['genre']).strip().lower()
     score = 0
 
+    #Inclusions were more difficult to isolate so incorpoated exclusions
     exclusions = {
         "frat party": ["rock", "afro house"],
         "sunset": [
@@ -35,6 +35,7 @@ def score_track(row, vibe):
 
 
     excluded = exclusions.get(vibe.lower(), [])
+    #drafted a scoring tool in order to priortize the songs
     if any(g.lower() in genre for g in excluded):
         return 0
 
@@ -84,7 +85,7 @@ def score_track(row, vibe):
     score += random.uniform(0, 0.3)
     return score
 
-# --- Camelot Logic ---
+#tool to key match
 def parse_key(k):
     match = re.match(r"^(\d{1,2})([AB])$", str(k).strip().upper())
     return (int(match.group(1)), match.group(2)) if match else (None, None)
@@ -99,7 +100,6 @@ def get_harmonic_neighbors(key):
     neighbors.append(f"{(num - 2) % 12 + 1}{mode}")
     return neighbors
 
-# --- Filter by Key Zones ---
 def filter_by_camelot_zone(tracks, key_range):
     result = []
     for t in tracks:
@@ -109,11 +109,11 @@ def filter_by_camelot_zone(tracks, key_range):
             result.append(t)
     return result
 
-# --- Load Transitions ---
+
 def load_transitions():
     return set()
 
-# --- DAG Longest Path Setlist Builder ---
+
 def build_harmonic_graph_setlist(scored_tracks, total_duration_seconds, use_auto_segmentation=True, transitions=None):
     df = [t for t in scored_tracks if t['vibe_score'] > 0 and t['key']]
 
@@ -146,7 +146,7 @@ def build_harmonic_graph_setlist(scored_tracks, total_duration_seconds, use_auto
 
     return result
 
-# --- Segment Path Logic ---
+
 def build_segment_graph(tracks, total_duration_seconds, transitions=None):
     durations = [estimate_track_duration(t) for t in tracks]
     n = len(tracks)
@@ -174,7 +174,7 @@ def build_segment_graph(tracks, total_duration_seconds, transitions=None):
     best_path_indices = max(dp, key=lambda x: (x[0] <= total_duration_seconds, x[0], random.random()))[1]
     return [tracks[i] for i in best_path_indices]
 
-# --- Utility Functions ---
+
 def estimate_track_duration(row, ratio=0.7):
     try:
         if 'time' in row and isinstance(row['time'], str) and ':' in row['time']:
@@ -198,6 +198,12 @@ def summarize_stats(setlist):
     for genre, count in genres.items():
         st.markdown(f"- {genre.title()}: {count} song(s)")
 
+def export_setlist_to_csv(setlist, filename="setlist_export.csv"):
+    df = pd.DataFrame(setlist)
+    df.to_csv(filename, index=False)
+    st.download_button("📥 Download Setlist", data=df.to_csv(index=False), file_name=filename, mime='text/csv')
+
+
 def save_setlist_to_db(name, setlist):
     if not name or not setlist:
         return
@@ -220,8 +226,7 @@ def load_saved_setlists():
         return pd.read_csv(path)
     return pd.DataFrame()
 
-# --- Streamlit UI ---
-st.title("🎶 Smart DJ Setlist Generator")
+st.title("Smart DJ Setlist Generator")
 
 start_str = st.time_input("Set Start Time", value=datetime.strptime("01:00", "%H:%M").time())
 end_str = st.time_input("Set End Time", value=datetime.strptime("03:00", "%H:%M").time())
@@ -245,7 +250,7 @@ if st.button("Generate Setlist"):
 
     st.session_state.edited_set = best_set
 
-st.markdown("### 📝 Final Edited Setlist")
+st.markdown("###  Final Edited Setlist")
 if 'edited_set' in st.session_state:
     current_time = datetime.combine(datetime.today(), start_str)
     for i, track in enumerate(st.session_state.edited_set):
@@ -260,11 +265,11 @@ if 'edited_set' in st.session_state:
     summarize_stats(st.session_state.edited_set)
     st.markdown("---")
     name_to_save = st.text_input("Name this Setlist")
-    if st.button("💾 Save Setlist"):
+    if st.button(" Save Setlist"):
         save_setlist_to_db(name_to_save, st.session_state.edited_set)
 
 st.markdown("---")
-st.markdown("### ➕ Add a New Song")
+st.markdown("###  Add a New Song")
 new_title = st.selectbox("Track Title", options=[""] + existing_titles)
 
 matched_row = df[df['track_title'] == new_title].iloc[0] if new_title in df['track_title'].values else None
@@ -301,11 +306,11 @@ if st.button("Add Song to Setlist"):
     if not inserted:
         st.session_state.edited_set.append(new_track)
 
-    st.success(f"✅ '{new_title}' added to setlist!")
+    st.success(f" '{new_title}' added to setlist!")
     st.rerun()
 
 st.markdown("---")
-st.markdown("### 📁 Load Saved Setlist")
+st.markdown("### Load Saved Setlist")
 saved_df = load_saved_setlists()
 if not saved_df.empty:
     names = saved_df['name'].unique().tolist()
